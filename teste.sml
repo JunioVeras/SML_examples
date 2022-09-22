@@ -90,6 +90,7 @@ fun max (E) = raise Match
     in
       if m > h then m else h
     end;
+  ;
 
 fun min (E) = raise Match
   | min (L(h, E)) = h
@@ -99,7 +100,10 @@ fun min (E) = raise Match
     in
       if m < h then m else h
     end;
-  
+  ;
+
+val L0 = L(1, (L(2, L(3, E))));
+
 max(L0);
 
 min(L0);
@@ -136,6 +140,7 @@ fun split(s : string) =
   in 
     String.tokens isDelimiter s
   end;
+  ;
 
 fun allTrue([h]) = if h = true then true else false
   | allTrue([]) = false
@@ -163,10 +168,86 @@ datatype btree = Leaf | Node of (btree * int * btree);
 fun sumAll(Leaf) = 0
   | sumAll(Node(e1,v,e2)) = sumAll(e1) + v + sumAll(e2);
 
-fun multiPairs([], []) = [] | multiPairs(((h1::t1) : int list), ((h2::t2) : int list)) = (h1 * h2)::(sumLists(t1,t2));
+fun multiPairs([], []) = [] | multiPairs(((h1::t1) : int list), ((h2::t2) : int list)) = (h1 * h2)::(multiPairs(t1,t2));
 
 fun square (num : int) = num * num;
 fun sum ((num1 : int), (num2 : int)) = num1 + num2;
 fun compose(square,sum,num1,num2) = square(sum(num1, num2));
 
 (*  *)
+
+datatype academico = Estudante | Professor | Coordenador;
+fun salario (Estudante) = Reais 100.0
+  | salario (Professor) = Reais 1000.0
+  | salario (Coordenador) = Reais 10000.0;
+
+fun menos2(Centavos a, Centavos b) = real(a - b)
+  | menos2(Reais a, Reais b) = a - b
+  | menos2(Pessoa_Dinheiro (a,b), Pessoa_Dinheiro (c,d)) = b - d
+  | menos2(_, _) = 0.0;
+
+fun menos(a, b) = menos2 (salario (a), salario (b));
+menos (Coordenador, Estudante);
+
+(*  *)
+
+fun filter _ [] = []
+  | filter p (h::t) = if p h then h::(filter p t) else filter p t;
+
+fun pos x = x > 0;
+pos 1;
+pos ~1;
+
+filter pos [1,~2,3,~4];
+
+foldr (fn (x,y) => if pos x then x::y else y) [] [1,~2,3,~4];
+
+fun otherfilter p l = foldr (fn (x,y) => if p x then x::y else y) [] l;
+otherfilter pos [1,~2,3,~4];
+
+(* Sintaxe e Semantica *)
+
+fun isIn (x : string) (h::t) = h = x orelse (isIn x t)
+  | isIn x [] = false;
+
+fun union l [] = l
+  | union l (h::t) = if isIn h l then union l t else union (h::l) t;
+
+fun insert x l = if isIn x l then l else (x::l);
+
+union (["1","2","3","4"]) (["2","4","5","6"]);
+
+type mem = (string * int) list;
+datatype bexpr = BConst of bool | And of bexpr * bexpr | Or of bexpr * bexpr | Not of bexpr;
+datatype iexpr = IConst of int | Plus of iexpr * iexpr | Minus of iexpr * iexpr | Ite of bexpr * iexpr * iexpr | Var of string | Let of string * iexpr * iexpr;
+
+fun beval (BConst e) = e
+  | beval (And(e1, e2)) = beval(e1) andalso beval(e2)
+  | beval (Or(e1, e2)) = beval(e1) orelse beval(e2)
+  | beval (Not(e)) = not(beval(e));
+
+val e1 = And(Not(Or(BConst true, BConst false)), BConst true);
+beval(e1);
+
+fun ieval (IConst e) (m) = e 
+  | ieval (Plus(e1, e2)) (m) = ieval e1 m + ieval e2 m
+  | ieval (Minus(e1, e2)) (m) = ieval e1 m - ieval e2 m
+  | ieval (Ite(b, e1, e2)) (m) = if beval(b) then ieval e1 m else ieval e2 m
+  | ieval (Var x) ((s,i)::t) = if s = x then i else ieval (Var x) t
+  | ieval (Let(x, v, e)) (m) = ieval e (((x, (ieval v m)))::m);
+
+val e2 = Minus(Plus(IConst 1, IConst 2), Let("x", IConst 111, Ite(e1, IConst 1, Var "x")));
+
+fun freeVars (IConst e) (m) = []
+  | freeVars (Plus(e1, e2)) (m) = union (freeVars e1 m) (freeVars e2 m)
+  | freeVars (Minus(e1, e2)) (m) = union (freeVars e1 m) (freeVars e2 m)
+  | freeVars (Ite(b, e1, e2)) (m) = union (freeVars e1 m) (freeVars e2 m)
+  | freeVars (Var x) (m) = if isIn x m then [] else [x]
+  | freeVars (Let(x, v, e)) (m) = union (freeVars v m) (freeVars e (x::m));
+
+fun closed (e : iexpr) = (freeVars e [] = []);
+exception NonClosed;
+
+fun run (e : iexpr) = if closed e then ieval e [] else raise NonClosed;
+
+run e2
