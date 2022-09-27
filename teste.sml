@@ -205,7 +205,7 @@ foldr (fn (x,y) => if pos x then x::y else y) [] [1,~2,3,~4];
 fun otherfilter p l = foldr (fn (x,y) => if p x then x::y else y) [] l;
 otherfilter pos [1,~2,3,~4];
 
-(* Sintaxe e Semantica *)
+(* Sintaxe e Semantica / Binding variables *)
 
 fun isIn (x : string) (h::t) = h = x orelse (isIn x t)
   | isIn x [] = false;
@@ -250,4 +250,115 @@ exception NonClosed;
 
 fun run (e : iexpr) = if closed e then ieval e [] else raise NonClosed;
 
-run e2
+run e2;
+
+run (Plus(Minus(Let("x", IConst 10, Let("y", IConst 20, Plus(Var "x", Var "y"))), e2), IConst 2));
+
+(* BubbleSort *)
+
+fun bubbleSort(l) = 
+  let
+    fun sortAux (h1::h2::t) = if h1 < h2 then h1::(sortAux(h2::t)) else h2::(sortAux(h1::t))
+      | sortAux (l) = l
+    fun size (h::t) = 1 + size(t)
+      | size ([]) = 0
+  in
+    let 
+      fun for (0) (l) =l
+        | for (n) (h::t) = for (n-1) (sortAux(h::t))
+    in
+      for (size(l)) (l)
+    end
+  end;
+
+bubbleSort([1,85,83,36,6,995,31,30,5]);
+
+(* MergeSort *)
+
+fun mergeSort(l) =
+  let
+    fun fori (l) (0) = l
+      | fori (h::t) (n) = fori (t) (n-1)
+    fun forj (l) (0) = []
+      | forj (h::t) (n) = h::(forj (t) (n-1))
+  in
+    let 
+      fun ordena (h1::t1) ([]) = h1::t1
+        | ordena ([]) (h2::t2) = h2::t2
+        | ordena (h1::t1) (h2::t2) = if h1 < h2 then h1::(ordena (t1) (h2::t2)) else h2::(ordena (h1::t1) (t2))
+      fun size (h::t) = 1 + size(t)
+        | size ([]) = 0
+    in
+      let
+        fun merge ([n1,n2]) = if n1 > n2 then [n2,n1] else [n1,n2]
+          | merge ([n]) = [n]
+          | merge (h::t) = 
+          let  
+            val l1 = merge (forj (h::t) (size(h::t) div 2))
+            val l2 = merge (fori (h::t) (size(h::t) div 2))
+          in
+            ordena l1 l2
+          end
+      in
+        merge(l)
+      end
+    end
+  end;
+
+val test = [18,765,574,3891,309,932,682,626,72];
+mergeSort(test);
+
+(* Graph
+
+type grafo = (int * int list) list;
+
+fun BFS (g) (init) = 
+  let
+    fun for ([]) (n) = []
+      | for (((id, l)::t) : grafo) (n) = if id = n then l else for (t) (n);
+    fun size (h::t) = 1 + size(t)
+      | size ([]) = 0
+    fun l (0) = []
+      | l (size) = (l (size-1))@[(size, 0)]
+    fun remove ([]) (n) = []
+      | remove (((id, l)::t) : grafo) (n) = if id = n then t else (id, l)::(remove t n)
+    fun addAux ([]) (n) (r:int) = []
+      | addAux ((i1, i2)::t) (n : int) r = if i1 = n then (i1, r)::t else (i1, i2)::(addAux (t) (n) r)
+    (* fun add (l) ([]) (r:int) = l
+      | add (l : (int * int) list) ((h::t) : int list) r : (int * int) list = add (addAux l h r) t r *)
+    fun union [] [] = []
+      | union (l : (int * int) list) [] = l
+      | union (((i1,j1)::t1) : (int * int) list) (((i2,j2)::t2) : (int * int) list) = if j1 < j2 then (i1, j1)::(union t1 t2) else (i2, j2)::(union t1 t2)
+  in
+    let
+      fun percorre (g:grafo) (i) (l:(int*int)list) (r:int) = 
+        let
+          val p1 = for g i
+          val p2 = remove g i
+          val p3 = r+1
+          val p4 = addAux l i r
+        in
+          let
+            fun percorreAux (p2) ([]) (p4) (p3) = []
+              | percorreAux (p2) (p1::t) (p4) (p3) = union (percorre p2 p1 p4 p3) (percorreAux p2 t p4 p3)
+          in 
+            percorreAux p2 p1 p4 p3
+          end
+        end
+    in
+      percorre g init (l (size g)) 0
+    end
+  end;
+
+BFS [(1,[2,3]),(2,[]),(3,[2]),(4,[1])] 1
+
+val g = [(1,[2,3]),(2,[]),(3,[2]),(4,[1])];
+val i = 1;
+val r = 0;
+val l1 = l (size g);
+val p1 = for g i;
+val p2 = remove g i;
+val p3 = r+1;
+val p4 = addAux l1 i r;
+
+percorre g i (l1) 0 *)
