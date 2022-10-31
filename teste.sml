@@ -205,7 +205,7 @@ foldr (fn (x,y) => if pos x then x::y else y) [] [1,~2,3,~4];
 fun otherfilter p l = foldr (fn (x,y) => if p x then x::y else y) [] l;
 otherfilter pos [1,~2,3,~4];
 
-(* Sintaxe e Semantica / Binding variables *)
+(* Sintaxe e Semantica / Binding variables / Closures*)
 
 fun isIn (x : string) (h::t) = h = x orelse (isIn x t)
   | isIn x [] = false;
@@ -219,24 +219,72 @@ union (["1","2","3","4"]) (["2","4","5","6"]);
 
 type mem = (string * int) list;
 datatype bexpr = BConst of bool | And of bexpr * bexpr | Or of bexpr * bexpr | Not of bexpr;
-datatype iexpr = IConst of int | Plus of iexpr * iexpr | Minus of iexpr * iexpr | Ite of bexpr * iexpr * iexpr | Var of string | Let of string * iexpr * iexpr;
 
 fun beval (BConst e) = e
   | beval (And(e1, e2)) = beval(e1) andalso beval(e2)
   | beval (Or(e1, e2)) = beval(e1) orelse beval(e2)
   | beval (Not(e)) = not(beval(e));
 
-val e1 = And(Not(Or(BConst true, BConst false)), BConst true);
-beval(e1);
+datatype iexpr = IConst of int | BConst of bool | Prim2 of string * iexpr * iexpr | Prim1 of string * iexpr | Ite of iexpr * iexpr * iexpr 
+               | Var of string | Let of string * iexpr * iexpr | LetFun of string * string * iexpr * iexpr | Call of string * iexpr;
 
-fun ieval (IConst e) (m) = e 
-  | ieval (Plus(e1, e2)) (m) = ieval e1 m + ieval e2 m
-  | ieval (Minus(e1, e2)) (m) = ieval e1 m - ieval e2 m
-  | ieval (Ite(b, e1, e2)) (m) = if beval(b) then ieval e1 m else ieval e2 m
-  | ieval (Var x) ((s,i)::t) = if s = x then i else ieval (Var x) t
-  | ieval (Let(x, v, e)) (m) = ieval e (((x, (ieval v m)))::m);
+type 'v env = (string * 'v) list;
 
-val e2 = Minus(Plus(IConst 1, IConst 2), Let("x", IConst 111, Ite(e1, IConst 1, Var "x")));
+datatype value = Int of int | Closure of string * string * iexpr * value env;
+
+fun intToBool 1 = true
+  | intToBool 0 = false
+  | intToBool _ = raise Match;
+
+fun boolToInt true = 1
+  | boolToInt false = 0;
+
+fun lookup x [] = raise Match
+  | lookup x (((f, v)::t) : value env) = if x = f then v else lookup x t;
+
+fun eval (IConst e) (m : value env) = e 
+  | eval (BConst e) (m) = boolToInt e 
+  | eval (Prim2(a, e1, e2)) (m) =
+  (
+    case a of
+      "+" => (eval e1 m) + (eval e2 m)
+    | "-" => (eval e1 m) - (eval e2 m)
+    | "*" => (eval e1 m) * (eval e2 m)
+    | "/" => (eval e1 m) div (eval e2 m)
+    | "=" => if (eval e1 m) = (eval e2 m) then 1 else 0
+    | ">" => if (eval e1 m) > (eval e2 m) then 1 else 0
+    | "and" => boolToInt ((intToBool (eval e1 m)) andalso (intToBool (eval e2 m)))
+    | "or" => boolToInt ((intToBool (eval e1 m)) orelse (intToBool (eval e2 m)))
+    | _ => raise Match
+  )
+  | eval (Prim1(a, e)) (m) =
+  (
+    case a of
+      "-" => ~(eval e m)
+    | "not" => boolToInt (not (intToBool (eval e m)))
+    | _ => raise Match
+  )
+  | eval (Ite(c, e1, e2)) (m) = if intToBool(eval c m) then eval e1 m else eval e2 m
+  | eval (Var x) (m) = 
+    let
+      val v = lookup x m
+    in
+      case v of
+        (Int i) => i
+      | (Closure _) => raise Match
+    end
+  | eval (Let(x, v, e)) (m) = eval e (((x, Int (eval v m)))::m)
+  | eval (Call(f, x)) (m) =
+    let
+      val v = lookup f m
+    in
+      case v of
+        (Int _) => raise Match
+      | (Closure(f, arg, e, fSt)) => eval e (((arg, eval x m))::(f, v)::m)
+    end
+
+val e7 = Let("y", IConst 49, Prim2("*", Var "x", Prim2("+", IConst 3, Var "y")));
+eval e7 [("x", 1)];
 
 fun freeVars (IConst e) (m) = []
   | freeVars (Plus(e1, e2)) (m) = union (freeVars e1 m) (freeVars e2 m)
@@ -248,11 +296,7 @@ fun freeVars (IConst e) (m) = []
 fun closed (e : iexpr) = (freeVars e [] = []);
 exception NonClosed;
 
-fun run (e : iexpr) = if closed e then ieval e [] else raise NonClosed;
-
-run e2;
-
-run (Plus(Minus(Let("x", IConst 10, Let("y", IConst 20, Plus(Var "x", Var "y"))), e2), IConst 2));
+fun run (e : iexpr) = if closed e then eval e [] else raise NonClosed;
 
 (* BubbleSort *)
 
@@ -362,3 +406,252 @@ val p3 = r+1;
 val p4 = addAux l1 i r;
 
 percorre g i (l1) 0 *)
+
+(* Lista 2 *)
+
+datatype expr = IConst of int | Plus of expr * expr | Minus of expr * expr |
+                Multi of expr * expr | Div of expr * expr | Max of expr * expr |
+                Min of expr * expr | Eq of expr * expr | Gt of expr * expr;
+
+fun eval (IConst i) = i
+  | eval (Plus(e1, e2)) = (eval e1) + (eval e2)
+  | eval (Minus(e1, e2)) = (eval e1) - (eval e2)
+  | eval (Multi(e1, e2)) = (eval e1) * (eval e2)
+  | eval (Div(e1, e2)) = if (eval e2) = 0 then 0 else (eval e1) div (eval e2)
+  | eval (Max(e1, e2)) = if (eval e1) > (eval e2) then eval e1 else eval e2
+  | eval (Min(e1, e2)) = if (eval e1) < (eval e2) then eval e1 else eval e2
+  | eval (Eq(e1, e2)) = if (eval e1) = (eval e2) then 1 else 0
+  | eval (Gt(e1, e2)) = if (eval e1) > (eval e2) then 1 else 0;
+
+
+datatype area = RConst of real | AQuadrado of area | ARetangulo of area * area | ACirculo of area;
+
+fun eval (RConst r) = r
+  | eval (AQuadrado a) = (eval a) * (eval a)
+  | eval (ARetangulo(a1, a2)) = (eval a1) * (eval a2)
+  | eval (ACirculo(a)) = 3.14 * (eval a) * (eval a);
+
+
+datatype perimetro = RConst of real | PQuadrado of perimetro | PRetangulo of perimetro * perimetro | PCirculo of perimetro | PTriangulo of perimetro * perimetro * perimetro;
+
+fun eval (RConst r) = r
+  | eval (PQuadrado p) = 4.0 * (eval p)
+  | eval (PRetangulo(p1, p2)) = 2.0 * (eval p1) + 2.0 * (eval p2)
+  | eval (PCirculo(p)) = 2.0 * 3.14 * (eval p)
+  | eval (PTriangulo(p1, p2, p3)) = (eval p1) + (eval p2) + (eval p3);
+
+eval(PTriangulo(RConst 9.978, RConst 8.008, RConst 0.600))
+
+
+datatype UnOp = Not;
+datatype BinOp = Add | Sub | Mul | Gt | Eq | Or;
+datatype Sexpr = IConst of int | Op1 of UnOp * Sexpr | Op2 of BinOp * Sexpr * Sexpr;
+
+fun simplify (IConst i) = IConst i
+  | simplify (Op2(Add, e1, e2)) = if (simplify e1) = IConst 0 then simplify e2 else if (simplify e2) = IConst 0 then simplify e1 else Op2(Add, simplify e1, simplify e2)
+  | simplify (Op2(Sub, e1, e2)) = if (simplify e2) = IConst 0 then simplify e1 else if (simplify e1) = (simplify e2) then IConst 0 else Op2(Sub, simplify e1, simplify e2)
+  | simplify (Op2(Mul, e1, e2)) = if (simplify e1) = IConst 0 orelse (simplify e2) = IConst 0 then IConst 0 else if (simplify e1) = IConst 1 then simplify e2 else if (simplify e2) = IConst 1 then simplify e1 else Op2(Mul, simplify e1, simplify e2)
+  | simplify (Op2(Gt, e1, e2)) = Op2(Gt, (simplify e1), (simplify e2))
+  | simplify (Op2(Eq, e1, e2)) = Op2(Eq, (simplify e1), (simplify e2))
+  | simplify (Op2(Or, e1, e2)) = if (simplify e1) = (simplify e2) then simplify e1 else Op2(Or, simplify e1, simplify e2)
+  | simplify (Op1(Not, e)) =
+    let
+      fun aux (Op1(Not, s))  = (s, true)
+        | aux (_) = (IConst 0 , false)
+      val simp = simplify e
+    in
+      if (#2 (aux simp)) = true then (#1 (aux simp)) else (Op1(Not, simp))
+    end;
+
+
+fun count_main(n) =
+  let
+    fun count(i) = if i = n then [n] else i::count(i+1)
+  in
+    count(1)
+  end;
+
+
+fun pow(n) =
+  let
+    fun calculePow(n) = n * n
+  in
+    calculePow(n)
+  end;
+
+
+fun split(l) = 
+  let
+    fun sp1 (h1::h2::t) = h1::(sp1 t)
+      | sp1 (h::t) = [h]
+      | sp1 ([]) = []
+    fun sp2 (h1::h2::t) = h2::(sp2 t)
+      | sp2 (h::t) = sp2 t
+      | sp2 ([]) = []
+  in
+    (sp1 l, sp2 l)
+  end;
+
+
+fun bad_max ( xs : int list ) =
+  if null xs
+    then 0
+  else if null ( tl xs )
+    then hd xs
+  else if hd xs > bad_max ( tl xs )
+    then hd xs
+  else bad_max ( tl xs ) ;
+
+fun bad_max ( xs : int list ) =
+  if null xs
+    then 0
+  else if hd xs > bad_max ( tl xs )
+    then hd xs
+  else bad_max ( tl xs ) ;
+
+fun good_max([]) = 0
+  | good_max(h::t) = if h > good_max(t) then h else good_max(t);
+
+bad_max([1,5,7,9,3,5,6]);
+
+good_max([1,5,7,9,3,5,6]);
+
+fun expr () =
+  let
+    val x = 1
+  in
+    let
+      val y = x + 2
+      val x = 2
+    in
+      (x + 1) + (y + 1)
+    end
+  end;
+
+expr()
+
+(* (x = 2 , x + 1) + (y = x + 2 , y + 1) *)
+
+type Num = int ;
+type Var = string ;
+
+datatype Aexpr =
+N of Num
+| V of Var
+| Plus of Aexpr * Aexpr
+| Mult of Aexpr * Aexpr
+| Minus of Aexpr * Aexpr ;
+
+datatype Bexpr =
+True
+| False
+| Eq of Aexpr * Aexpr
+| Leq of Aexpr * Aexpr
+| Not of Bexpr
+| And of Bexpr * Bexpr ;
+
+datatype Stm =
+Assign of Var * Aexpr
+| Skip
+| Comp of Stm * Stm
+| If of Bexpr * Stm * Stm
+| While of Bexpr * Stm 
+| Repeat of Stm * Bexpr;
+
+fun evalN n : Num = n
+
+exception FreeVar ;
+fun lookup [] id = raise FreeVar
+| lookup (( k : string , v ) :: l ) id = if id = k then v else lookup l id ;
+
+fun evalA ( N n ) _ = evalN n
+| evalA ( V x ) s = lookup s x
+| evalA ( Plus ( e1 , e2 ) ) s = ( evalA e1 s ) + ( evalA e2 s )
+| evalA ( Mult ( e1 , e2 ) ) s = ( evalA e1 s ) * ( evalA e2 s )
+| evalA ( Minus ( e1 , e2 ) ) s = ( evalA e1 s ) - ( evalA e2 s ) ;
+
+fun evalB True _ = true
+| evalB False _ = false
+| evalB ( Eq ( a1 , a2 ) ) s = ( evalA a1 s ) = ( evalA a2 s )
+| evalB ( Leq ( a1 , a2 ) ) s = ( evalA a1 s ) <= ( evalA a2 s )
+| evalB ( Not b ) s = not ( evalB b s )
+| evalB ( And ( b1 , b2 ) ) s = ( evalB b1 s ) andalso ( evalB b2 s ) ;
+
+fun evalStm ( stm : Stm ) ( s : ( string * int ) list ) : ( string * int ) list =
+  case stm of
+  ( Assign (x , a ) ) => (x , evalA a s ) :: s
+  | Skip => s
+  | ( Comp ( stm1 , stm2 ) ) => evalStm stm2 ( evalStm stm1 s )
+  | ( If (b , stm1 , stm2 ) ) =>
+  if ( evalB b s ) then evalStm stm1 s else evalStm stm2 s
+  | While (b, stm ) => if (evalB b s) then 
+  let 
+    val w2 = While(b, stm)
+    val s2 = evalStm stm s
+  in
+    evalStm w2 s2
+  end
+  else s
+  | Repeat (stm, b) =>
+  let 
+    val w2 = Repeat(stm, b)
+    val s2 = evalStm stm s
+  in
+    if (evalB b s2) then s2 else evalStm w2 s2
+  end;
+  (* | _ => raise Match ; *)
+
+val teste = While(Leq(V "x", N 10), Assign("x", Plus(V "x", N 1)));
+
+val s = [("x", 1)];
+
+evalStm teste s;
+
+val teste2 = Repeat(Assign("x", Minus(V "x", N 1)), Leq(V "x", N 10));
+
+val s2 = [("x", 20)];
+
+evalStm teste2 s2;
+
+(* Prova 1 *)
+(*3*)
+fun f ((h::t) : int list) = (h mod 2) = 0 orelse f(t)
+  | f ([]) = false;
+
+
+f ([1,3,5,7,2])
+
+(*4*)
+fun vconc (l: (string * string) list) =
+  case l of
+    nil => ("","")
+    | (h::t) =>
+      let 
+        val headValue1 = #1 h;
+        val headValue2 = #2 h;
+        val recValue = vconc t;
+        val recValue1 = #1 recValue;
+        val recValue2 = #2 recValue
+      in
+        (headValue1 ^ recValue1, headValue2 ^ recValue2)
+      end;
+
+fun aux (l1 : (string * string), l2 : (string * string)) = ((#1 l1) ^ (#1 l2), (#2 l1) ^ (#2 l2))
+
+foldr (fn (l1 : (string * string), l2 : (string * string)) => ((#1 l1) ^ (#1 l2), (#2 l1) ^ (#2 l2))) ("","") [("a","b"),("c","d"),("e","f")];
+
+fun filter2 _ [] = []
+  | filter2 f (h::t) = if f(h) then h::(filter f t) else (filter f t);
+
+fun map2 _ [] = []
+  | map2 f (h::t) = f(h)::(map f t);
+
+fun foldl2 _ acc [] = acc
+  | foldl2 f acc (h::t) = foldl2 f (f(h,acc)) t;
+
+filter2 (fn x => (x mod 2) = 0) [1,2,3,4,5,6];
+
+map2 (fn x => x) [1,2,3,4,5];
+
+foldl2 (fn (l1 : (string * string), l2 : (string * string)) => ((#1 l1) ^ (#1 l2), (#2 l1) ^ (#2 l2))) ("","") [("a","b"),("c","d"),("e","f")];
+
