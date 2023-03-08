@@ -655,3 +655,36 @@ map2 (fn x => x) [1,2,3,4,5];
 
 foldl2 (fn (l1 : (string * string), l2 : (string * string)) => ((#1 l1) ^ (#1 l2), (#2 l1) ^ (#2 l2))) ("","") [("a","b"),("c","d"),("e","f")];
 
+(* Lista 3 *)
+
+exception NegativeNumber
+
+signature MATH =
+sig
+  val fact : int -> int
+  val halfPi : real
+  val pow : (int * int) -> int
+  val double : int -> int
+  val useMyMathLib : int * string -> string
+end
+
+structure MyMathLib =
+struct
+  val halfPi = 1.57
+  fun fact 0 = 1
+    | fact n = if n < 0 then raise NegativeNumber else n * fact (n-1)
+  fun pow (b, 0) = 1
+    | pow (b, e) = if b < 0 orelse e < 0 then raise NegativeNumber else b * pow(b, (e-1))
+  fun double n = if n < 0 then raise NegativeNumber else 2 * n
+end
+
+fun useMyMathLib (n, "fact") = ((Int.toString(MyMathLib.fact n)) handle NegativeNumber => "Nao posso lidar com numeros negativos!")
+  | useMyMathLib (n, "pow") = ((Int.toString(MyMathLib.pow (n,n))) handle NegativeNumber => "Nao posso lidar com numeros negativos!")
+  | useMyMathLib (n, "double") = ((Int.toString(MyMathLib.double n)) handle NegativeNumber => "Nao posso lidar com numeros negativos!")
+
+MyMathLib.pow(15,5)
+useMyMathLib(2, "pow")
+Int.toString (10)
+
+(Int.toString(MyMathLib.fact 3)) handle NegativeNumber => "Nao posso lidar com numeros negativos!"
+
